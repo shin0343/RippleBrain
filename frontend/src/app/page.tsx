@@ -23,6 +23,31 @@ function sevColor(s: string) {
   return "bg-emerald-100 text-emerald-800";
 }
 
+function graphPathCount(a: Analysis | null): number {
+  if (!a || typeof a.graph !== "object" || a.graph === null) return 0;
+  const g = a.graph as { query_paths?: unknown; chunk_relations?: unknown };
+  const qp = Array.isArray(g.query_paths) ? g.query_paths.length : 0;
+  const cr = Array.isArray(g.chunk_relations) ? g.chunk_relations.length : 0;
+  return qp + cr;
+}
+
+function retrievalLabel(a: Analysis | null): string {
+  if (!a) return "";
+  if (a.retrieval_mode !== "hydra") return "Local fallback — not presented as HydraDB";
+  const n = graphPathCount(a);
+  if (n > 0) return `HydraDB hybrid retrieval — active · Graph context — ${n} relation path(s) returned`;
+  return "HydraDB hybrid retrieval — active · Graph indexing — pending (no relation paths returned yet)";
+}
+
+function graphSourceLabel(a: Analysis | null): string {
+  if (!a) return "run an analysis to load relations";
+  if (a.retrieval_mode !== "hydra") return "local manifest (not HydraDB)";
+  const n = graphPathCount(a);
+  return n > 0
+    ? `HydraDB graph context (${n} relation path(s))`
+    : "HydraDB graph requested — no relation paths yet (indexing pending); relations below are from the local manifest";
+}
+
 function EvidenceList({ items }: { items: Evidence[] }) {
   if (!items?.length) return <p className="text-sm text-slate-500">No evidence.</p>;
   return (
@@ -171,7 +196,7 @@ export default function Page() {
           {analysis && (
             <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm">
               <p><span className="font-semibold">Result:</span> {analysis.summary}</p>
-              <p className="mt-1 text-xs text-slate-500">Retrieval: <span className="font-semibold">{analysis.retrieval_mode === "hydra" ? "HydraDB (knowledge + graph context)" : "Local fallback — not presented as HydraDB"}</span> · Tools: {analysis.selected_tools.join(", ")}</p>
+              <p className="mt-1 text-xs text-slate-500">Retrieval: <span className="font-semibold">{retrievalLabel(analysis)}</span> · Tools: {analysis.selected_tools.join(", ")}</p>
               {analysis.warnings?.length > 0 && <p className="mt-1 text-xs text-amber-700">Notes: {analysis.warnings.join(" ")}</p>}
               <details className="mt-2 text-xs text-slate-600"><summary className="cursor-pointer font-semibold">Technical details (tool calls)</summary>
                 <ul className="mt-1 list-disc pl-5">{analysis.execution_log.map((l, i) => <li key={i}>{l}</li>)}</ul>
@@ -261,7 +286,7 @@ export default function Page() {
           </div>
           <div className="card p-5" aria-label="Relationship graph">
             <h2 className="text-lg font-bold">Relationship evidence</h2>
-            <p className="text-xs text-slate-500">Source: {analysis ? (analysis.retrieval_mode === "hydra" ? "HydraDB graph context" : "local manifest (not HydraDB)") : "run an analysis to load relations"}</p>
+            <p className="text-xs text-slate-500">Source: {graphSourceLabel(analysis)}</p>
             {graphRels.length === 0 ? <p className="mt-2 text-sm text-slate-500">No relations loaded yet.</p> : (
               <ul className="mt-2 max-h-72 space-y-1.5 overflow-auto font-mono text-xs">
                 {graphRels.map((r, i) => <li key={i} className="rounded bg-slate-900 p-2 text-cyan-200">{r.source} <span className="text-amber-300">—[{r.predicate}]→</span> {r.target}</li>)}

@@ -17,6 +17,24 @@ _FRONT_ID = re.compile(r"^id:\s*(\S+)", re.M)
 _FRONT_TITLE = re.compile(r"^title:\s*\"?([^\"]+)\"?", re.M)
 
 
+def _triplet(t: Any) -> dict:
+    def name(o: Any) -> str:
+        if o is None:
+            return "unknown"
+        if isinstance(o, dict):
+            return str(o.get("name", "?"))
+        return str(getattr(o, "name", "?"))
+
+    def pred(o: Any) -> str:
+        if isinstance(o, dict):
+            return str(o.get("canonical_predicate", "RELATED_TO"))
+        return str(getattr(o, "canonical_predicate", "RELATED_TO"))
+
+    return {"source": name(getattr(t, "source", None)),
+            "predicate": pred(getattr(t, "relation", None)),
+            "target": name(getattr(t, "target", None))}
+
+
 class HydraAdapter:
     def __init__(self):
         self.configured = bool(settings.hydra_api_key)
@@ -132,15 +150,23 @@ class HydraAdapter:
                 "indexing": "completed"}
 
     def _wait_completed(self, ids: list[str], collection: str, timeout_s: int) -> None:
+        # Guide-aligned: `graph_creation` is already searchable (graph may be
+        # partial); `completed` is fully indexed and graphed.
         client = self._client
         assert client is not None
         start = time.time()
         while time.time() - start < timeout_s:
             st = client.context.status(database=settings.hydra_database, collection=collection, ids=ids)
             states = [s.indexing_status for s in st.data.statuses]
-            if all(s == "completed" for s in states):
+            if all(s in ("completed", "graph_creation") for s in states):
                 return
             if any(s in ("errored", "failed") for s in states):
+                # A scope miss (wrong database/collection) also reports
+                # errored with FILE_NOT_FOUND — name it, don't guess.
+                codes = {getattr(s, "error_code", "") or "" for s in st.data.statuses}
+                if "FILE_NOT_FOUND" in codes:
+                    raise RuntimeError(
+                        "No such id in this scope: check database/collection match ingestion")
                 raise RuntimeError(f"HydraDB indexing failed: {states}")
             time.sleep(5)
         raise TimeoutError("HydraDB indexing did not complete within timeout")
@@ -195,27 +221,21 @@ class HydraAdapter:
                 "score": getattr(c, "relevancy_score", None),
             })
         paths: list[dict] = []
+        chunk_rels: list[dict] = []
         g = getattr(res.data, "graph_context", None)
         if g:
             for p in (getattr(g, "query_paths", None) or []):
-                triplets = []
-                for t in (getattr(p, "triplets", None) or []):
-                    def name(o: Any) -> str:
-                        if o is None:
-                            return "unknown"
-                        if isinstance(o, dict):
-                            return str(o.get("name", "?"))
-                        return str(getattr(o, "name", "?"))
-                    def pred(o: Any) -> str:
-                        if isinstance(o, dict):
-                            return str(o.get("canonical_predicate", "RELATED_TO"))
-                        return str(getattr(o, "canonical_predicate", "RELATED_TO"))
-                    triplets.append({"source": name(getattr(t, "source", None)),
-                                     "predicate": pred(getattr(t, "relation", None)),
-                                     "target": name(getattr(t, "target", None))})
+                triplets = [_triplet(t) for t in (getattr(p, "triplets", None) or [])]
                 paths.append({"triplets": triplets,
                               "relevancy": getattr(p, "relevancy_score", None)})
-        return {"chunks": chunks, "graph_paths": paths, "provenance": "hydra"}
+            for cr in (getattr(g, "chunk_relations", None) or []):
+                triplets = [_triplet(t) for t in (getattr(cr, "triplets", None) or [])]
+                chunk_rels.append({"triplets": triplets,
+                                   "group_id": getattr(cr, "group_id", None),
+                                   "combined_context": (getattr(cr, "combined_context", None) or "")[:300],
+                                   "relevancy": getattr(cr, "relevancy_score", None)})
+        return {"chunks": chunks, "graph_paths": paths,
+                "chunk_relations": chunk_rels, "provenance": "hydra"}
 
     def ingest_memory(self, texts: list[str]) -> dict:
         if not self._client:

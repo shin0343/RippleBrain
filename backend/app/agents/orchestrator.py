@@ -105,7 +105,9 @@ class Orchestrator:
                 base = self.hydra.query(query, graph_context=False)
                 adv = self.hydra.query(query, graph_context=True)
                 chunks = adv.get("chunks") or base.get("chunks")
-                graph = {"query_paths": adv.get("graph_paths", []), "provenance": "hydra"}
+                graph = {"query_paths": adv.get("graph_paths", []),
+                         "chunk_relations": adv.get("chunk_relations", []),
+                         "provenance": "hydra"}
                 log.append(f"HydraDB retrieval: {len(base.get('chunks', []))} baseline / {len(chunks)} with graph.")
                 return chunks, graph, "hydra", log
             except Exception as e:

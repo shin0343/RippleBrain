@@ -54,3 +54,18 @@ No invented accuracy percentages. Anything marked NOT VERIFIED above was not exe
 - Graph: manifest re-ingested with corrected `graph_payload` key (two live 400s diagnosed and fixed: metadata shape, key mismatch). Indexing still `queued` 12/12 after ~1h; `relations` empty, `query_paths` empty → graph-context traversal NOT VERIFIED. Seed route now skips re-ingest when 12 sources exist (upserts were resetting indexing progress).
 - Memory: approval → HydraDB memory id returned (`memory_status: hydra`); `type="all"` recall returns prior approval memories; targeted memory-collection query retrieves the newest approval. Cross-session durability confirmed.
 - Regression: pytest 10 passed + 2 skipped (live mode), tsc clean, lint clean, Playwright 14/14 (fresh-state harness with local DB reset; Cloud data untouched).
+
+## Round 4 — final graph diagnosis (2026-10-12 ~22:20 UTC)
+
+- DB `ripplebrain_demo` infra ready; collection `northstar_knowledge` holds exactly the 12 demo sources (timestamps all 21:58:44–49 UTC); all `queued`, no error messages, no updated_at.
+- ID mapping re-verified: ingest metadata ids (`01_…`–`12_…`) match `context.list` source ids 1:1; manifest content intact via `context.inspect`. Earlier belief that the graph key was wrong is corrected: server requires the key to equal the sent metadata id (`12_workflow_manifest`) — fixed and accepted without 400.
+- Isolated probe (2-line doc, separate `probe_tmp` collection, deleted afterwards): `queued` → `graph_creation` in <60s, still `graph_creation` after 4 min. Pipeline is moving, just slow — no client-side defect found; cause beyond this is service-side latency (not asserted as fact, only observed timings logged).
+- Existing 12 docs were NOT deleted or re-upserted; seed route now skips re-ingest when 12 sources exist (upserts were resetting indexing progress).
+- UI now renders data-driven labels: "HydraDB hybrid retrieval — active · Graph indexing — pending (no relation paths returned yet)" (flips automatically once paths return); relations panel discloses manifest provenance.
+## Round 5 — guide review + graph operational (2026-10-12 ~22:30 UTC)
+
+- Official Agent Integration Guide (`docs.hydradb.com/llms.txt`) reviewed against installed `hydradb-sdk 2.1.7` (within `>=2,<3`): client init, envelope `.data`, status lifecycle, metadata rules, `type`/`query_by`/`mode` enums all match our usage.
+- Guide-critical distinctions applied: `graph_payload` (BYO entity graph) vs `relations.ids` (forceful source links) are different mechanisms — we use the former; the latter needs no change. `graph_context:false` only bites in `fast` mode (ours: fast/baseline, thinking/graph — aligned). `graph_creation` = searchable (wait logic relaxed accordingly + `FILE_NOT_FOUND` scope-miss branch).
+- Real defect found and fixed: our parser dropped `chunk_relations` (first-class guide field). Now parsed, threaded through orchestrator, counted in UI.
+- Live proof: `relations(id=12_workflow_manifest)` returns 120 triplets incl. our BYO predicates (supersedes/overrides/applies-to/follows/approved-by/impacts/assigned-to/owned-by); demo analysis serves 15 chunk_relations incl. `refund policy v2 —[supersedes]→ refund policy v1`; manifest source reached `completed` (1/12; rest queued). `query_paths` are query-dependent (10 on one phrasing, 0 on the demo query) — reported as observed, not smoothed over.
+- Regression: pytest 12+2skip live / 14 local, tsc+lint clean, Playwright 14/14, UI label verified by screenshot.
