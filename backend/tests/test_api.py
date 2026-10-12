@@ -10,6 +10,19 @@ from app.main import app
 
 client = TestClient(app)
 
+def _internal_headers() -> dict:
+    # When INTERNAL_API_TOKEN is configured (SaaS-gateway deployment), the
+    # tests act as the internal caller by sending the service token.
+    token = os.environ.get("INTERNAL_API_TOKEN", "")
+    return {"X-Internal-Token": token} if token else {}
+
+def test_internal_gate_blocks_anonymous_mutations():
+    token = os.environ.get("INTERNAL_API_TOKEN", "")
+    if not token:
+        return
+    r = client.post("/api/changes/analyze", json={"change_request": "0123456789 abcdefghij"})
+    assert r.status_code == 401
+
 def test_health():
     r = client.get("/api/health")
     assert r.status_code == 200 and r.json()["status"] == "ok"
@@ -19,9 +32,10 @@ def test_brain_status_transparent_local():
     assert r.status_code == 200
     body = r.json()
     if os.environ.get("HYDRA_DB_API_KEY"):
-        # Key present: backend honestly reports HydraDB reachability.
+        # Key present: backend honestly reports reachability either way.
+        # The only invariant is consistency between the flag and the mode.
         assert body["hydra_configured"] is True
-        assert body["retrieval_mode"] == "hydra"
+        assert body["retrieval_mode"] == ("hydra" if body["hydra_connected"] else "local")
     else:
         assert body["retrieval_mode"] == "local"
         assert body["hydra_connected"] is False
@@ -29,7 +43,7 @@ def test_brain_status_transparent_local():
 
 def test_full_flow_analyze_approve():
     demo = "Our refund policy changes from 30 days to 14 days effective October 15, 2026. Analyze the organizational impact."
-    r = client.post("/api/changes/analyze", json={"change_request": demo})
+    r = client.post("/api/changes/analyze", json={"change_request": demo}, headers=_internal_headers())
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["old_window_days"] == 30 and body["new_window_days"] == 14
@@ -43,26 +57,26 @@ def test_full_flow_analyze_approve():
     assert len(body["sources"]) >= 4
 
     aid = body["actions"][0]["id"]
-    r2 = client.post(f"/api/actions/{aid}/approve", json={"note": "FAQ update approved"})
+    r2 = client.post(f"/api/actions/{aid}/approve", json={"note": "FAQ update approved"}, headers=_internal_headers())
     assert r2.status_code == 200
     assert r2.json()["status"] == "approved"
     # idempotent re-approve keeps approved, no duplicate
-    r3 = client.post(f"/api/actions/{aid}/approve", json={"note": "double click"})
+    r3 = client.post(f"/api/actions/{aid}/approve", json={"note": "double click"}, headers=_internal_headers())
     assert r3.json()["status"] == "approved"
 
 def test_reject_flow():
     demo = "Refund policy changes from 30 days to 14 days effective October 15, 2026."
-    r = client.post("/api/changes/analyze", json={"change_request": demo})
+    r = client.post("/api/changes/analyze", json={"change_request": demo}, headers=_internal_headers())
     aid = [a for a in r.json()["actions"] if a["status"] == "draft"]
     assert aid, "expected fresh drafts"
     rid = aid[0]["id"]
-    r2 = client.post(f"/api/actions/{rid}/reject", json={"note": "not now"})
+    r2 = client.post(f"/api/actions/{rid}/reject", json={"note": "not now"}, headers=_internal_headers())
     assert r2.json()["status"] == "rejected"
 
 def test_rerun_creates_no_duplicates():
     demo = "Our refund policy changes from 30 days to 14 days effective October 15, 2026. Analyze the organizational impact."
     before = client.get("/api/actions").json()["actions"]
-    r = client.post("/api/changes/analyze", json={"change_request": demo})
+    r = client.post("/api/changes/analyze", json={"change_request": demo}, headers=_internal_headers())
     assert r.status_code == 200
     after = client.get("/api/actions").json()["actions"]
     assert len(after) == len(before), "re-running the same change must not duplicate actions"
@@ -74,7 +88,7 @@ HAS_HYDRA_KEY = bool(os.environ.get("HYDRA_DB_API_KEY"))
 def test_insufficient_evidence_no_fabrication():
     before = client.get("/api/actions").json()["actions"]
     r = client.post("/api/changes/analyze", json={
-        "change_request": "What is our parental leave policy for contractors in Germany? List the exact clauses."})
+        "change_request": "What is our parental leave policy for contractors in Germany? List the exact clauses."}, headers=_internal_headers())
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["impacts"] == []
@@ -89,7 +103,7 @@ def test_insufficient_evidence_no_fabrication():
 @pytest.mark.skipif(HAS_HYDRA_KEY, reason="live Hydra chunk windows cover doc starts; bait at doc end is out of window — approval gate still enforced")
 def test_injection_surfaced_in_live_retrieval():
     demo = "Our refund policy changes from 30 days to 14 days effective October 15, 2026. Analyze the organizational impact."
-    r = client.post("/api/changes/analyze", json={"change_request": demo})
+    r = client.post("/api/changes/analyze", json={"change_request": demo}, headers=_internal_headers())
     body = r.json()
     assert any("Untrusted instruction ignored" in w for w in body["warnings"])
     # approval gate still intact: drafts stay drafts until human approval

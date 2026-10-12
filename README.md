@@ -196,11 +196,53 @@ Open http://localhost:3000 → **Load sample data** → keep the prefilled refun
 
 ---
 
+## SaaS shell: Digo App-Starter integration
+
+RippleBrain also runs inside a Digo App-Starter workspace (MIT-licensed,
+https://github.com/digohq/app-starter, vendored under `app-starter/`).
+
+- **Used for real**: App-Starter authentication (email+password login), organization
+  workspaces with OWNER/ADMIN/MEMBER roles, NestJS API, Next.js UI.
+- **New vertical** (Projects-shaped, one slice): Prisma `RippleBrainRun` audit model
+  + migration; NestJS `ripplebrain` module (`analyze`, `approve`, `reject`, `runs`)
+  that checks organization membership/role server-side (foreign org → 404,
+  member approve → 403) and proxies to the FastAPI engine with an internal
+  service token; shared types in `packages/shared`; `ripplebrain-api.ts`
+  client; `organizations/[organizationId]/ripplebrain` page built from the
+  starter's `components/ui`; org-home entry card.
+- **Engine untouched**: FastAPI + HydraDB Knowledge/Graph/Memory + SQLite run as
+  before on :8000. When `INTERNAL_API_TOKEN` is set, FastAPI compute/mutation
+  routes require the `X-Internal-Token` header, so the engine cannot be driven
+  anonymously around organization auth. Unset = open local development (that is
+  how the standalone :3000 demo runs).
+- **Demo scope (stated, not claimed)**: single-organization demo; the engine's
+  HydraDB/SQLite stores are shared, while *access* is org-gated and every run
+  is audited per organization in Postgres. No per-tenant engine data isolation
+  is claimed.
+
+| Service | URL |
+|---|---|
+| SaaS web (login → org → RippleBrain) | http://localhost:3010 (`owner@example.com` / `Password123!`) |
+| NestJS API + Swagger | http://localhost:3011, `/api/docs` |
+| FastAPI engine | http://localhost:8000 |
+
+```bash
+brew services start postgresql@15 redis  # or Docker Compose per app-starter README
+cd app-starter && pnpm install
+pnpm --filter @app-starter/api exec prisma migrate deploy
+pnpm --filter @app-starter/api run prisma:seed
+pnpm --filter @app-starter/shared build
+pnpm --filter @app-starter/api dev   # :3011 (needs RIPPLEBRAIN_* in apps/api/.env)
+pnpm --filter @app-starter/web dev   # :3010
+```
+
+---
+
 ## Limitations (stated upfront) → Roadmap (worth funding)
 
 - Local fallback is keyword-based, not vector search → HydraDB hybrid is the default when keyed.
 - LLM synthesis needs `OPENAI_API_KEY`; otherwise deterministic rules apply (still grounded, still gated).
-- Single-user hackathon MVP: no auth, no multi-tenancy, no external integrations.
+- Single-organization SaaS demo: auth + org roles + per-org audit via App-Starter; engine stores shared (see SaaS scope note above).
 - **Next:** full graph-context comparison once indexing completes, Slack/Jira/Confluence connectors, role-based memories, multi-policy scenarios, calibrated confidence, Jira/Notion action sync.
 
 ---
