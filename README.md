@@ -18,6 +18,22 @@
 
 ---
 
+## The 10-second mental model
+
+- **HydraDB = the brain.** It stores the company's knowledge and memories and finds them when asked.
+- **RippleBrain = the employee.** It takes what the brain retrieves, analyzes the impact, and proposes the work.
+- **An app shell (e.g. Digo App-Starter) = the office.** In a real deployment that's where employees log in and process tasks; RippleBrain is the analysis engine inside it.
+
+### How it plays out on the Northstar refund change
+
+1. **User:** *"If we change the refund policy, which departments are affected?"*
+2. **HydraDB** searches company documents and relationships → returns the refund policies, Support FAQ, ACME contract, and related owners.
+3. **RippleBrain's analysis engine** reasons over those retrieved documents → identifies Support / Sales / Finance / Legal impacts and detects the ACME contract exception.
+4. **Tasks + human approval:** FAQ updates, talk-track refresh, SOP review, legal carve-out circulation are proposed as drafts; nothing takes effect until a human approves.
+5. **HydraDB Memory** stores the approved decision and reuses it in the next analysis — the brain gets smarter without rewriting what it knows.
+
+---
+
 ## Why judges should care in 20 seconds
 
 Policy changes don't fail because people disagree. They fail because **Support FAQs, sales talk tracks, finance SOPs and signed contracts drift out of sync** — and nobody sees the blast radius until a customer is misled or a contract is breached.
@@ -103,6 +119,24 @@ Built on `hydradb-sdk` v2 API per the official Company Brain guide, verified liv
 - `relations(id=12_workflow_manifest)` returns **120 triplets** incl. our BYO predicates
 - Demo analysis serves **15 `chunk_relations`** incl. `refund policy v2 —[supersedes]→ refund policy v1`
 - Indexing observed honestly: manifest reached `completed`, rest `queued`/`graph_creation` — UI reports per-run counts and otherwise shows *"Graph indexing — pending"*
+
+### What HydraDB actually does here (3 jobs)
+
+| Job | What it means | Status in this demo |
+|---|---|---|
+| **Knowledge** | Semantic + keyword search over company documents | ✅ Verified — 12/12 demo docs searchable, Refund Policy v2 ranked first |
+| **Graph** | Relationships between policies, contracts, docs, owners | 🟡 Partially verified — relation data stored (120 triplets), `chunk_relations` served live (15 paths); full `query_paths` coverage pending indexing |
+| **Memory** | Past decisions stored and re-retrieved for future analyses | ✅ Verified — approvals stored and re-queried across sessions |
+
+### The distinction that matters
+
+HydraDB never decides *"Support must rewrite the FAQ."* It **finds and provides the relevant FAQ and policy**; RippleBrain's analysis logic **generates the conclusion** from them. Likewise, the verified RippleBrain here runs primarily on a **rule-based planner** (OpenAI function-calling only when keyed) — so don't pitch it as a fully autonomous LLM judging your company. The intelligence is in grounded retrieval + explicit conflict gates, not magic.
+
+### Why not just SQLite or plain RAG?
+
+SQLite alone can store policy text and approval rows just fine. But semantic search, document linking, and recalling past decisions would each need separate hand-built systems. HydraDB provides all three as one service. Honest caveat: **at this demo's 12-document scale we claim no performance edge** — the payoff is operational: when this grows to thousands of policies, contracts, and decision records, search and memory stay managed in one place instead of three DIY stacks.
+
+> **One-line version:** HydraDB is the foundation that owns knowledge, relationships, and memory; RippleBrain is the application that turns that foundation into real company work.
 
 **Honest fallback:** without `HYDRA_DB_API_KEY`, the app runs a transparent local keyword hybrid over `data/company/*.md` + `data/relationships/graph.json` — always labeled `retrieval_mode: local`, never presented as HydraDB. Seed: `backend/.venv/bin/python scripts/seed_company.py` · Verify: `backend/.venv/bin/python scripts/verify_hydradb.py`.
 
