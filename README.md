@@ -10,11 +10,21 @@
   <img src="https://img.shields.io/badge/stack-Next.js_14_%2B_FastAPI-000000?style=flat-square" alt="stack" />
 </p>
 
-**Live demo in 60 seconds:** paste `Our refund policy changes from 30 days to 14 days effective October 15, 2026. Analyze the organizational impact.` → get 4 department impacts + 1 contract exception + 4 ownable drafts. Approve one. Done.
+> 🎬 **Watch the demo (60 sec):** one refund-policy change → 4 department impacts + 1 contract exception + 4 ownable drafts → approve one. Done.
+
+[![RippleBrain — 60-second demo](https://img.youtube.com/vi/YcaJZ39ArTI/maxresdefault.jpg)](https://youtu.be/YcaJZ39ArTI)
+
+*Click the thumbnail to play on YouTube — [`youtu.be/YcaJZ39ArTI`](https://youtu.be/YcaJZ39ArTI). Try it yourself with: `Our refund policy changes from 30 days to 14 days effective October 15, 2026. Analyze the organizational impact.`*
+
+<details>
+<summary>Can't play YouTube? Use the local demo file</summary>
 
 <video src="submission-assets/demo.mp4" controls width="100%"></video>
 
-*Can't play inline? Open [`submission-assets/demo.mp4`](submission-assets/demo.mp4). All data below is the fictional **Northstar Cloud** demo company — 100% synthetic. Demo analysis is not legal advice.*
+Open [`submission-assets/demo.mp4`](submission-assets/demo.mp4).
+</details>
+
+*All data below is the fictional **Northstar Cloud** demo company — 100% synthetic. Demo analysis is not legal advice.*
 
 ---
 
@@ -224,7 +234,8 @@ https://github.com/digohq/app-starter, vendored under `app-starter/`).
 |---|---|
 | SaaS web (login → org → RippleBrain) | http://localhost:3010 (`owner@example.com` / `Password123!`) |
 | NestJS API + Swagger | http://localhost:3011, `/api/docs` |
-| FastAPI engine | http://localhost:8000 |
+| FastAPI engine (gated, for SaaS) | http://localhost:8001 (`INTERNAL_API_TOKEN` enforced) |
+| FastAPI engine (open, local dev/standalone :3000 demo) | http://localhost:8000 (`INTERNAL_API_TOKEN` unset) |
 
 ```bash
 brew services start postgresql@15 redis  # or Docker Compose per app-starter README
